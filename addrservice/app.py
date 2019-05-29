@@ -9,6 +9,7 @@ from typing import (
     Optional,
     Tuple,
 )
+import traceback
 
 import tornado.web
 
@@ -45,14 +46,25 @@ class BaseRequestHandler(tornado.web.RequestHandler):
         super().on_finish()
 
     def write_error(self, status_code: int, **kwargs: Any) -> None:
-        super()
-        # TODO: Exercise: Implement it to return JSON instead of Tornado's
-        # default HTML implementation. Also, it should include stack trace
-        # When debug is set to True in make_addrservice_app
+        self.set_header('Content-Type', 'application/json; charset=UTF-8')
+        body = {
+            'method': self.request.method,
+            'uri': self.request.path,
+            'code': status_code,
+            'message': self._reason
+        }
+
+        if self.settings.get("serve_traceback") and "exc_info" in kwargs:
+            # in debug mode, send a traceback
+            trace = '\n'.join(traceback.format_exception(*kwargs['exc_info']))
+            body['trace'] = trace
+
+        self.finish(body)
 
 
 class DefaultRequestHandler(BaseRequestHandler):
-    def initialize(self, status_code, message):
+    def initialize(self, logger, status_code, message):
+        self.logger = logger
         self.set_status(status_code, reason=message)
 
     def prepare(self) -> Optional[Awaitable[None]]:
@@ -107,10 +119,17 @@ class AddressBookEntryRequestHandler(BaseRequestHandler):
             raise tornado.web.HTTPError(404, reason=str(e))
 
     async def put(self, id):
-        # TODO: Exercise: implement this method. Remove 'no_' from
-        # the 'no_test_address_book_endpoints' function in file
-        # 'tests/integration/app_test.py', and all tests should pass.
-        pass
+        try:
+            addr = json.loads(self.request.body.decode('utf-8'))
+            await self.service.put_address(id, addr)
+            self.set_status(204)
+            self.finish()
+        except (json.decoder.JSONDecodeError, TypeError):
+            raise tornado.web.HTTPError(400, reason='Invalid JSON body')
+        except KeyError as e:
+            raise tornado.web.HTTPError(404, reason=str(e))
+        except ValueError as e:
+            raise tornado.web.HTTPError(400, reason=str(e))
 
     async def delete(self, id):
         try:
@@ -136,11 +155,11 @@ def log_function(handler: tornado.web.RequestHandler) -> None:
     logger = getattr(handler, 'logger', logging.getLogger(LOGGER_NAME))
 
     if handler.get_status() < 400:
-        logger.info(msg)
+        logger.info(msg, exc_info=True)
     elif handler.get_status() < 500:
-        logger.warning(msg)
+        logger.warning(msg, exc_info=True)
     else:
-        logger.error(msg)
+        logger.error(msg, exc_info=True)
 
 
 def make_addrservice_app(
@@ -162,8 +181,8 @@ def make_addrservice_app(
         compress_response=True,  # compress textual responses
         log_function=log_function,  # log_request() uses it to log results
         serve_traceback=debug,  # it is passed on as setting to write_error()
-        # TODO: Exercise: add here suitable values for default_handler_class
-        # and default_handler_args parameters to hook in DefaultRequestHandler
+        default_handler_class=DefaultRequestHandler,
+        default_handler_args={'logger': logger, 'status_code': 404, 'message': 'Unknown Endpoint'}  # noqa
     )
 
     return service, app

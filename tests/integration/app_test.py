@@ -88,22 +88,13 @@ class TestAddressServiceApp(tornado.testing.AsyncHTTPTestCase):
             method='GET',
             headers=None,
         )
-        # info = json.loads(r.body.decode('utf-8'))
-
-        # TODO: Exercise: Tornado, by default, send HTML response on 404.
-        # Implement BaseRequestHandler.write_error method to return a JSON
-        # response, and hook DefaultRequestHandler to tornado.web.Application
-        # creation with suitable args so that the last two assert statements
-        # of this test function start passing.
-        info = r.body
-        # print(info)
+        info = json.loads(r.body.decode('utf-8'))
 
         self.assertEqual(r.code, 404, info)
-        # self.assertEqual(info['code'], 404)
-        # self.assertEqual(info['message'], 'Unknown Endpoint')
+        self.assertEqual(info['code'], 404)
+        self.assertEqual(info['message'], 'Unknown Endpoint')
 
-    # TODO: Exercise: rename this function to test_address_book_endpoints
-    def no_test_address_book_endpoints(self):
+    def test_address_book_endpoints(self):
         # Get all addresses in the address book, must be ZERO
         r = self.fetch(
             ADDRESSBOOK_ENTRY_URI_FORMAT_STR.format(id=''),
